@@ -71,32 +71,20 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
-            steps {
-                script {
-                    echo "Deploying image to DockerHub..."
-
-                    // tag local image to your DockerHub repo
-                    bat "docker tag ${env.IMAGE_NAME}:latest ${env.DOCKER_REPO}:latest"
-
-                    // push it
-                    bat "docker push ${env.DOCKER_REPO}:latest"
-
-                    echo "Image successfully pushed to DockerHub"
-                }
-            }
-        }
-    }
-
-    post {
-        always {
+    stage('Deploy') {
+        steps {
             script {
-                echo "Cleaning container..."
-                // ignore errors when stopping/removing
-                bat(returnStatus: true, script: "docker stop ${env.CONTAINER_ID}")
-                bat(returnStatus: true, script: "docker rm ${env.CONTAINER_ID}")
+                echo "Deploying image to DockerHub..."
+    
+                def dockerRepo = "sanjaybalane/sum-image"
+    
+                bat """
+                    docker tag sum-image:latest ${dockerRepo}:latest
+                    docker push ${dockerRepo}:latest
+                """
+    
+                echo "Image successfully pushed to DockerHub"
             }
-        }
     }
 }
 
