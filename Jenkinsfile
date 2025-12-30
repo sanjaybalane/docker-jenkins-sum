@@ -2,9 +2,10 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "sum-image"
-        DOCKER_REPO = "sanjaybalane/sum-image"
+        IMAGE_NAME    = "sum-image"
+        DOCKER_REPO   = "sanjaybalane/sum-image"
         TEST_FILE_PATH = "test_variables.txt"
+        CONTAINER_ID  = ""          // will be filled in Run stage
     }
 
     stages {
@@ -22,12 +23,17 @@ pipeline {
             steps {
                 script {
                     echo "Starting container..."
-                    // stop old container if exists
-                    bat "docker stop null || echo already stopped"
-                    bat "docker rm null || echo already removed"
 
-                    bat "docker run -d --name null ${IMAGE_NAME}"
-                    echo "Container started: null"
+                    // Start a new container in detached mode and capture its ID
+                    def out = bat(
+                        script: "docker run -d ${IMAGE_NAME}",
+                        returnStdout: true
+                    )
+
+                    def lines = out.split('\n')
+                    env.CONTAINER_ID = lines[lines.size() - 1].trim()
+
+                    echo "Container started with ID: ${env.CONTAINER_ID}"
                 }
             }
         }
@@ -37,10 +43,15 @@ pipeline {
                 script {
                     echo "Running tests..."
 
+                    if (!env.CONTAINER_ID?.trim()) {
+                        error "No container ID available, cannot run tests."
+                    }
+
                     def testLines = readFile(TEST_FILE_PATH).split('\n')
 
                     for (line in testLines) {
-                        if (line.trim()) {
+                        line = line.trim()
+                        if (line) {
                             def vars = line.split(' ')
                             def arg1 = vars[0]
                             def arg2 = vars[1]
@@ -49,11 +60,12 @@ pipeline {
                             echo "Testing ${arg1} + ${arg2}"
 
                             def output = bat(
-                                script: "docker exec null python /app/sum.py ${arg1} ${arg2}",
+                                script: "docker exec ${env.CONTAINER_ID} python /app/sum.py ${arg1} ${arg2}",
                                 returnStdout: true
                             )
 
-                            def result = output.split('\n')[-1].trim().toFloat()
+                            def resultLine = output.split('\n')[-1].trim()
+                            def result = resultLine.replace("Sum:", "").trim().toFloat()
 
                             if (result == expectedSum) {
                                 echo "SUCCESS: ${arg1} + ${arg2} = ${result}"
@@ -71,15 +83,17 @@ pipeline {
                 script {
                     echo "Deploying image to DockerHub..."
 
+                    // Tag local image -> DockerHub repo
                     bat "docker tag ${IMAGE_NAME}:latest ${DOCKER_REPO}:latest"
 
+                    // Try to push, but do not fail the whole pipeline if it errors
                     def pushStatus = bat(
                         script: "docker push ${DOCKER_REPO}:latest",
                         returnStatus: true
                     )
 
                     if (pushStatus != 0) {
-                        echo "⚠️ WARNING: Docker push failed (authorization / permission), continuing pipeline."
+                        echo "WARNING: Docker push failed (authorization/permissions), but pipeline will continue."
                     } else {
                         echo "Image successfully pushed to DockerHub"
                     }
@@ -92,8 +106,12 @@ pipeline {
         always {
             script {
                 echo "Cleaning container..."
-                bat "docker stop null || echo already stopped"
-                bat "docker rm null || echo already removed"
+                if (env.CONTAINER_ID?.trim()) {
+                    bat(script: "docker stop ${env.CONTAINER_ID}", returnStatus: true)
+                    bat(script: "docker rm ${env.CONTAINER_ID}", returnStatus: true)
+                } else {
+                    echo "No container to clean."
+                }
             }
         }
     }
