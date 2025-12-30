@@ -24,10 +24,8 @@ pipeline {
                 script {
                     echo "Starting container..."
 
-                    // unique container name per build
                     env.CONTAINER_ID = "sum-container-${env.BUILD_NUMBER}"
 
-                    // start container detached
                     bat "docker run -d --name ${env.CONTAINER_ID} ${env.IMAGE_NAME}"
 
                     echo "Container started: ${env.CONTAINER_ID}"
@@ -38,7 +36,7 @@ pipeline {
         stage('Test') {
             steps {
                 script {
-                    echo "Running tests..."
+                    echo 'Running tests...'
 
                     def testLines = readFile(env.TEST_FILE_PATH).split('\n')
 
@@ -71,20 +69,29 @@ pipeline {
             }
         }
 
-    stage('Deploy') {
-        steps {
-            script {
-                echo "Deploying image to DockerHub..."
-    
-                def dockerRepo = "sanjaybalane/sum-image"
-    
-                bat """
-                    docker tag sum-image:latest ${dockerRepo}:latest
-                    docker push ${dockerRepo}:latest
-                """
-    
-                echo "Image successfully pushed to DockerHub"
+        stage('Deploy') {
+            steps {
+                script {
+                    echo "Deploying image to DockerHub..."
+
+                    bat "docker tag ${env.IMAGE_NAME}:latest ${env.DOCKER_REPO}:latest"
+
+                    bat "docker push ${env.DOCKER_REPO}:latest"
+
+                    echo "Image successfully pushed to DockerHub"
+                }
             }
+        }
+    }
+
+    post {
+        always {
+            script {
+                echo "Cleaning container..."
+                bat(returnStatus: true, script: "docker stop ${env.CONTAINER_ID}")
+                bat(returnStatus: true, script: "docker rm ${env.CONTAINER_ID}")
+            }
+        }
     }
 }
 
