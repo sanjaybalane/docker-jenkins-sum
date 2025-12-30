@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME     = "sum-image"
-        CONTAINER_ID   = "sum-container"
+        CONTAINER_ID   = ""
         SUM_PY_PATH    = "/app/sum.py"
         DIR_PATH       = "."
         TEST_FILE_PATH = "test_variables.txt"
@@ -24,14 +24,13 @@ pipeline {
                 script {
                     echo "Starting container..."
 
-                    // Stop & remove old container if exists
-                    bat "docker stop ${env.CONTAINER_ID} || echo already stopped"
-                    bat "docker rm ${env.CONTAINER_ID} || echo already removed"
+                    // Give container a unique name each build
+                    env.CONTAINER_ID = "sum-container-${env.BUILD_NUMBER}"
 
-                    // Start new container
+                    // Start container in background
                     bat "docker run -d --name ${env.CONTAINER_ID} ${env.IMAGE_NAME}"
 
-                    echo "Container started successfully"
+                    echo "Container started: ${env.CONTAINER_ID}"
                 }
             }
         }
@@ -75,6 +74,9 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo "Deployment stage (optional for now)"
+                // You can later add:
+                // bat "docker tag ${env.IMAGE_NAME} ${env.DOCKER_REPO}"
+                // bat "docker push ${env.DOCKER_REPO}"
             }
         }
     }
@@ -83,10 +85,10 @@ pipeline {
         always {
             script {
                 echo "Cleaning container..."
-                bat "docker stop ${env.CONTAINER_ID} || echo already stopped"
-                bat "docker rm ${env.CONTAINER_ID} || echo already removed"
+                // Ignore errors during cleanup (returnStatus: true)
+                bat(returnStatus: true, script: "docker stop ${env.CONTAINER_ID}")
+                bat(returnStatus: true, script: "docker rm ${env.CONTAINER_ID}")
             }
         }
     }
 }
-
